@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -10,6 +10,8 @@ import {
   SafeAreaView,
   StatusBar,
   TextInput,
+  Image,
+  Platform,
 } from 'react-native';
 import MapView, { Marker, Polyline } from './Maps';
 
@@ -17,7 +19,7 @@ import MapView, { Marker, Polyline } from './Maps';
 // 1. CONFIGURACIÓN INICIAL (CÚCUTA)
 // ==========================================
 const SEDE_ASOCIACION = {
-  nombre: 'Sede Asociación Recicla Cúcuta (Centro)',
+  nombre: 'Sede ReRuta (Centro)',
   latitude: 7.8891,
   longitude: -72.4967,
 };
@@ -93,6 +95,61 @@ const REPORTES_INICIALES = [
     longitude: -72.4861,
     direccion: 'Av. Guaimaral #8N-30',
     zonaBarrio: 'Guaimaral',
+    estado: 'PENDIENTE',
+  },
+  {
+    id: 'p4',
+    remitente: 'Edificio Quinta Bosch',
+    material: 'Plástico PET y Vidrio',
+    pesoKg: 26,
+    latitude: 7.8925,
+    longitude: -72.4920,
+    direccion: 'Av. 2E #11-50, Quinta Bosch',
+    zonaBarrio: 'Quinta Bosch',
+    estado: 'PENDIENTE',
+  },
+  {
+    id: 'p5',
+    remitente: 'Droguería La Alemana (Colsag)',
+    material: 'Cartón y Empaques',
+    pesoKg: 20,
+    latitude: 7.8950,
+    longitude: -72.4890,
+    direccion: 'Calle 8 #12E-20, Colsag',
+    zonaBarrio: 'Colsag',
+    estado: 'PENDIENTE',
+  },
+  {
+    id: 'p6',
+    remitente: 'Parrilla del Parque (La Riviera)',
+    material: 'Latas de aluminio y Vidrio',
+    pesoKg: 32,
+    latitude: 7.8980,
+    longitude: -72.4910,
+    direccion: 'Av. 0 #6-30, La Riviera',
+    zonaBarrio: 'La Riviera',
+    estado: 'PENDIENTE',
+  },
+  {
+    id: 'p7',
+    remitente: 'Conjunto Residencial Prados del Este',
+    material: 'Reciclaje Multifamiliar',
+    pesoKg: 160,
+    latitude: 7.8995,
+    longitude: -72.4785,
+    direccion: 'Av. Demetrio Mendoza, Prados del Este',
+    zonaBarrio: 'Prados del Este',
+    estado: 'PENDIENTE',
+  },
+  {
+    id: 'p8',
+    remitente: 'Bodega Mayorista Atalaya',
+    material: 'Cartón prensado y Plásticos',
+    pesoKg: 280,
+    latitude: 7.9015,
+    longitude: -72.5265,
+    direccion: 'Av. Las Américas, Atalaya',
+    zonaBarrio: 'Atalaya',
     estado: 'PENDIENTE',
   },
 ];
@@ -302,6 +359,35 @@ const distribuirFlotaPorZonas = (origen, reportesPendientes, flotaActiva) => {
     });
   }
 
+  // Incluir a los recolectores activos que estén disponibles en base
+  peatonales.forEach((p) => {
+    if (!planesGenerados.some((pl) => pl.recolector.id === p.id)) {
+      planesGenerados.push({
+        id: `plan_${p.id}_${Date.now()}`,
+        recolector: p,
+        paradas: [],
+        cargaTotalKg: 0,
+        distanciaTotalKm: 0,
+        tiempoEstimadoMin: 0,
+        zonasCubiertas: 'Base (En espera)',
+      });
+    }
+  });
+
+  motorizados.forEach((m) => {
+    if (!planesGenerados.some((pl) => pl.recolector.id === m.id)) {
+      planesGenerados.push({
+        id: `plan_${m.id}_${Date.now()}`,
+        recolector: m,
+        paradas: [],
+        cargaTotalKg: 0,
+        distanciaTotalKm: 0,
+        tiempoEstimadoMin: 0,
+        zonasCubiertas: 'Base (En espera)',
+      });
+    }
+  });
+
   return planesGenerados;
 };
 
@@ -309,10 +395,29 @@ const distribuirFlotaPorZonas = (origen, reportesPendientes, flotaActiva) => {
 // 3. COMPONENTE PRINCIPAL
 // ==========================================
 export default function App() {
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      document.title = 'ReRuta';
+      let link = document.querySelector("link[rel*='icon']");
+      if (!link) {
+        link = document.createElement('link');
+        link.rel = 'shortcut icon';
+        document.getElementsByTagName('head')[0].appendChild(link);
+      }
+      link.href = require('./assets/logo.png');
+    }
+  }, []);
+
   const [tabActiva, setTabActiva] = useState('MAPA');
   const [reportes, setReportes] = useState(REPORTES_INICIALES);
   const [flota, setFlota] = useState(FLOTA_INICIAL);
-  const [planesZonificados, setPlanesZonificados] = useState([]);
+  const [planesZonificados, setPlanesZonificados] = useState(() =>
+    distribuirFlotaPorZonas(
+      SEDE_ASOCIACION,
+      REPORTES_INICIALES,
+      FLOTA_INICIAL
+    )
+  );
 
   // Estados del formulario para agregar nuevo recolector
   const [nuevoNombre, setNuevoNombre] = useState('');
@@ -328,39 +433,69 @@ export default function App() {
   });
 
   const toggleRecolectorActivo = (id) => {
-    setFlota((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, activo: !r.activo } : r))
+    const nuevaFlota = flota.map((r) =>
+      r.id === id ? { ...r, activo: !r.activo } : r
     );
-    setPlanesZonificados([]);
+    setFlota(nuevaFlota);
+
+    const pendientes = reportes.filter((r) => r.estado === 'PENDIENTE');
+    const activos = nuevaFlota.filter((r) => r.activo);
+    if (pendientes.length > 0 && activos.length > 0) {
+      const planes = distribuirFlotaPorZonas(
+        SEDE_ASOCIACION,
+        pendientes,
+        activos
+      );
+      setPlanesZonificados(planes);
+    } else {
+      setPlanesZonificados([]);
+    }
   };
 
   const agregarNuevoRecolector = () => {
-    if (!nuevoNombre || !nuevoTelefono || !nuevoCapacidad) {
-      alert('Por favor completa todos los campos para agregar al recolector.');
+    if (!nuevoNombre.trim() || !nuevoTelefono.trim() || !nuevoCapacidad.trim()) {
+      alert('Por favor completa todos los campos para agregar al asociado.');
       return;
     }
 
-    const colorAleatorio = '#' + Math.floor(Math.random() * 16777215).toString(16);
+    const colorAleatorio =
+      '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
 
     const nuevoRec = {
       id: 'r_' + Date.now(),
-      nombre: nuevoNombre,
-      telefono: nuevoTelefono,
+      nombre: nuevoNombre.trim(),
+      telefono: nuevoTelefono.trim(),
       categoria: esVehiculo ? 'MOTORIZADO' : 'PEATONAL',
       travelMode: esVehiculo ? 'driving' : 'walking',
       etiqueta: esVehiculo ? '🛺 Vehículo / Motorizado' : '🚶 A pie',
       capacidadMaxKg: Number(nuevoCapacidad),
-      radioMaxKm: esVehiculo ? 10.0 : 2.0,
+      radioMaxKm: esVehiculo ? 10.0 : 2.5,
       colorRuta: colorAleatorio,
       activo: true,
     };
 
-    setFlota((prev) => [...prev, nuevoRec]);
+    const nuevaFlota = [...flota, nuevoRec];
+    setFlota(nuevaFlota);
     setNuevoNombre('');
     setNuevoTelefono('');
     setNuevoCapacidad('');
     setEsVehiculo(false);
-    alert(`¡Recolector ${nuevoNombre} agregado con éxito a la flota!`);
+
+    // Actualizar inmediatamente la zonificación en el mapa con la nueva flota
+    const pendientes = reportes.filter((r) => r.estado === 'PENDIENTE');
+    const activos = nuevaFlota.filter((r) => r.activo);
+    if (pendientes.length > 0 && activos.length > 0) {
+      const planesActualizados = distribuirFlotaPorZonas(
+        SEDE_ASOCIACION,
+        pendientes,
+        activos
+      );
+      setPlanesZonificados(planesActualizados);
+    }
+
+    // Redirigir a la pestaña MAPA para ver los cambios de inmediato
+    setTabActiva('MAPA');
+    alert(`¡Asociado ${nuevoRec.nombre} guardado! La zonificación y el mapa han sido actualizados.`);
   };
 
   const handleDistribuirFlota = () => {
@@ -414,7 +549,7 @@ export default function App() {
       .join('\n\n');
 
     const mensaje =
-      `♻️ *HOJA DE RUTA ZONIFICADA - CÚCUTA*\n` +
+      `♻️ *HOJA DE RUTA ZONIFICADA - ReRuta*\n` +
       `👷 *Asociado:* ${recolector.nombre}\n` +
       `🚦 *Transporte:* ${recolector.etiqueta}\n` +
       `📍 *Zona asignada:* ${zonasCubiertas}\n` +
@@ -452,20 +587,66 @@ export default function App() {
   };
 
   const simularReporteWhatsApp = () => {
+    const reportesNuevos = [
+      {
+        remitente: 'Restaurante La Brasa (El Malecón)',
+        material: 'Vidrio, Latas y Cartón',
+        pesoKg: 35,
+        latitude: 7.8965,
+        longitude: -72.4842,
+        direccion: 'Av. Libertadores #15-10',
+        zonaBarrio: 'El Malecón',
+      },
+      {
+        remitente: 'Panadería Bellavista',
+        material: 'Cartón corrugado',
+        pesoKg: 18,
+        latitude: 7.8820,
+        longitude: -72.4910,
+        direccion: 'Calle 10 #3-12, Bellavista',
+        zonaBarrio: 'Bellavista',
+      },
+      {
+        remitente: 'Ferretería Santander (Centro)',
+        material: 'Chatarra liviana',
+        pesoKg: 42,
+        latitude: 7.8905,
+        longitude: -72.5020,
+        direccion: 'Av. 5 #8-30, Centro',
+        zonaBarrio: 'Centro',
+      },
+    ];
+    const sel = reportesNuevos[Math.floor(Math.random() * reportesNuevos.length)];
+
     const nuevo = {
       id: 'w_' + Date.now(),
-      remitente: 'Restaurante La Brasa (El Malecón)',
-      material: 'Vidrio, Latas y Cartón',
-      pesoKg: 45,
-      latitude: 7.8965,
-      longitude: -72.4842,
-      direccion: 'Av. Libertadores #15-10',
-      zonaBarrio: 'El Malecón',
+      remitente: sel.remitente,
+      material: sel.material,
+      pesoKg: sel.pesoKg,
+      latitude: sel.latitude,
+      longitude: sel.longitude,
+      direccion: sel.direccion,
+      zonaBarrio: sel.zonaBarrio,
       estado: 'PENDIENTE',
     };
-    setReportes((prev) => [...prev, nuevo]);
-    setPlanesZonificados([]);
-    alert(`📲 ¡Nuevo reporte WA recibido!\nRestaurante La Brasa reportó ${nuevo.pesoKg} kg en ${nuevo.zonaBarrio}. Pin agregado al mapa.`);
+
+    const nuevosReportes = [...reportes, nuevo];
+    setReportes(nuevosReportes);
+
+    // Recalcular rutas inmediatamente en el mapa
+    const activos = flota.filter((r) => r.activo);
+    if (activos.length > 0) {
+      const planes = distribuirFlotaPorZonas(
+        SEDE_ASOCIACION,
+        nuevosReportes.filter((r) => r.estado === 'PENDIENTE'),
+        activos
+      );
+      setPlanesZonificados(planes);
+    }
+
+    alert(
+      `📲 ¡Nuevo reporte WA recibido!\n${nuevo.remitente} reportó ${nuevo.pesoKg} kg en ${nuevo.zonaBarrio}. Rutas del mapa actualizadas.`
+    );
   };
 
   const peatonalesActivos = flota.filter(
@@ -481,12 +662,19 @@ export default function App() {
 
       {/* HEADER */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>EcoRuta Cúcuta • Flota y Zonas</Text>
-          <Text style={styles.headerSubtitle}>
-            Activos hoy: {peatonalesActivos} a pie • {motorizadosActivos}{' '}
-            vehículos
-          </Text>
+        <View style={styles.headerBrand}>
+          <Image
+            source={require('./assets/logo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+          <View>
+            <Text style={styles.headerTitle}>ReRuta • Flota y Zonas</Text>
+            <Text style={styles.headerSubtitle}>
+              Activos hoy: {peatonalesActivos} a pie • {motorizadosActivos}{' '}
+              vehículos
+            </Text>
+          </View>
         </View>
         <TouchableOpacity
           style={styles.simularBtn}
@@ -528,20 +716,22 @@ export default function App() {
               />
             ))}
 
-            {planesZonificados.map((plan) => (
-              <Polyline
-                key={plan.id}
-                coordinates={[
-                  SEDE_ASOCIACION,
-                  ...plan.paradas.map((p) => ({
-                    latitude: p.latitude,
-                    longitude: p.longitude,
-                  })),
-                ]}
-                strokeColor={plan.recolector.colorRuta}
-                strokeWidth={4}
-              />
-            ))}
+            {planesZonificados
+              .filter((plan) => plan.paradas && plan.paradas.length > 0)
+              .map((plan) => (
+                <Polyline
+                  key={plan.id}
+                  coordinates={[
+                    SEDE_ASOCIACION,
+                    ...plan.paradas.map((p) => ({
+                      latitude: p.latitude,
+                      longitude: p.longitude,
+                    })),
+                  ]}
+                  strokeColor={plan.recolector.colorRuta}
+                  strokeWidth={4}
+                />
+              ))}
           </MapView>
 
           <View style={styles.bottomSheet}>
@@ -577,25 +767,33 @@ export default function App() {
                       </Text>
                     </View>
 
-                    <Text style={styles.planZoneText}>
-                      📍 Sector: {plan.zonasCubiertas} •{' '}
-                      {plan.distanciaTotalKm} km (~{plan.tiempoEstimadoMin} min)
-                    </Text>
+                    {plan.paradas && plan.paradas.length > 0 ? (
+                      <>
+                        <Text style={styles.planZoneText}>
+                          📍 Sector: {plan.zonasCubiertas} •{' '}
+                          {plan.distanciaTotalKm} km (~{plan.tiempoEstimadoMin} min)
+                        </Text>
 
-                    {plan.paradas.map((p, i) => (
-                      <Text key={p.id} style={styles.stopLine}>
-                        {i + 1}. {p.remitente} ({p.pesoKg}kg)
-                      </Text>
-                    ))}
+                        {plan.paradas.map((p, i) => (
+                          <Text key={p.id} style={styles.stopLine}>
+                            {i + 1}. {p.remitente} ({p.pesoKg}kg)
+                          </Text>
+                        ))}
 
-                    <TouchableOpacity
-                      style={styles.waDispatchBtn}
-                      onPress={() => despacharRutaWhatsApp(plan)}
-                    >
-                      <Text style={styles.waDispatchText}>
-                        📲 Enviar a {plan.recolector.nombre} por WhatsApp
+                        <TouchableOpacity
+                          style={styles.waDispatchBtn}
+                          onPress={() => despacharRutaWhatsApp(plan)}
+                        >
+                          <Text style={styles.waDispatchText}>
+                            📲 Enviar a {plan.recolector.nombre} por WhatsApp
+                          </Text>
+                        </TouchableOpacity>
+                      </>
+                    ) : (
+                      <Text style={{ fontSize: 12, color: '#64748B', marginTop: 6, fontStyle: 'italic' }}>
+                        🕒 Asociado activo y disponible en base. Esperando nuevos reportes en su sector.
                       </Text>
-                    </TouchableOpacity>
+                    )}
                   </View>
                 ))}
               </ScrollView>
@@ -782,6 +980,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: '#0F172A',
+  },
+  headerBrand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  logo: {
+    width: 38,
+    height: 38,
+    borderRadius: 8,
   },
   headerTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' },
   headerSubtitle: { color: '#38BDF8', fontSize: 12, marginTop: 2 },
